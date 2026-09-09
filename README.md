@@ -41,7 +41,9 @@ EmberForge_CL
 
 Out of 8 total rundll32.exe executions identified during the incident window, 7 followed normal system baselines while 1 stood out immediately. The red boxes in the screenshot below highlight the anomalous execution at row 6 (21:27:03 UTC) — notice the parent process shift from svchost.exe to explorer.exe, and the DLL loading from D:\ instead of System32.
 
-![EmberForge Q01 Query Results - All rundll32 Executions](./evidence/q01_rundll32_query_results.png)
+
+<img width="1663" height="682" alt="Screenshot 2026-09-09 at 4 33 10 PM" src="https://github.com/user-attachments/assets/768186af-8973-4207-9b68-f88cff47e76c" />
+
 
 ---
 
