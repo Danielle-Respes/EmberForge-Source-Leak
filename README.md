@@ -1,12 +1,12 @@
-# EmberForge: Source Leak
+# EmberForge: Source Leak — Threat Hunt Report
 
-> **Investigator Note:** Hands-on threat hunt analyzing Active Directory lateral movement and initial access telemetry within Microsoft Sentinel (`law-silentcorridor`).
+> **Hunter Note:** Digging into an Active Directory lab scenario inside Microsoft Sentinel (`law-silentcorridor`). This write-up covers my process for tracking down the initial access point across our scope hosts.
 
 ---
 
 ## Executive Summary
 
-An Active Directory incident investigation was conducted across three scope hosts (workstation, file server, domain controller). Analysis identified the initial access vector as a suspicious `rundll32.exe` process execution on the user workstation (`EC2AMAZ-B9GHHO6`), loading an unverified DLL (`review.dll`) from a root directory (`D:\`). 
+An Active Directory incident investigation was conducted across three scoped hosts (workstation, file server, domain controller). Analysis identified the initial access vector as a suspicious `rundll32.exe` process execution on the user workstation (`EC2AMAZ-B9GHHO6`), loading an unverified DLL (`review.dll`) from a root directory (`D:\`).
 
 ---
 
@@ -39,36 +39,29 @@ EmberForge_CL
 
 ### Query Results & Evidence
 
-All 8 rundll32.exe executions identified during the incident window. Red boxes highlight the anomalous execution at row 6 (21:27:03 UTC) showing the suspicious parent process (explorer.exe) and malicious DLL path (D:\review.dll).
+Out of 8 total rundll32.exe executions identified during the incident window, 7 followed normal system baselines while 1 stood out immediately. The red boxes in the screenshot below highlight the anomalous execution at row 6 (21:27:03 UTC) — notice the parent process shift from svchost.exe to explorer.exe, and the DLL loading from D:\ instead of System32.
 
 ![EmberForge Q01 Query Results - All rundll32 Executions](./evidence/q01_rundll32_query_results.png)
-
-The anomalous execution stands out immediately when comparing against the seven baseline executions spawned by svchost.exe. The shift from system service (svchost) to user shell (explorer.exe) as the parent process, combined with the non-standard DLL path (D:\), confirms malicious execution.
 
 ---
 
 ### Telemetry Breakdown
 
-**Total Executions:** 8  
-**Baseline Activity:** 7 executions were spawned by svchost.exe loading legitimate binaries from C:\Windows\System32\.  
-**Anomalous Execution:** 1 execution was spawned directly by explorer.exe invoking a DLL from D:\review.dll.
-
 | Metric | Baseline / Expected Behavior | Observed Anomalous Event |
 |--------|-----|-----|
 | Parent Process | svchost.exe (System Service) | explorer.exe (Interactive User Context) |
 | Binary Path | C:\Windows\System32\ | D:\review.dll |
-| Risk Level | Low (System Operation) | High (Potential Payload Execution) |
+| Risk Level | Low (Normal System Operation) | High (Potential Malicious Payload) |
 
+**Baseline Activity (7 events):** Spawned by svchost.exe loading legitimate system binaries from C:\Windows\System32\.
 
-
-<img width="1663" height="682" alt="Screenshot 2026-09-09 at 4 33 10 PM" src="https://github.com/user-attachments/assets/dbc28d62-94ab-4513-8c56-3c4db35a01a8" />
-
+**Anomalous Event (1 event):** Spawned directly by explorer.exe at 21:27:03 UTC, executing a DLL straight from D:\review.dll.
 
 ---
 
 ### Threat Hunter Takeaway
 
-This case highlights the importance of baseline validation over initial assumptions. While `rundll32.exe` is a standard Windows utility, tracing the parent-child process relationship and file paths quickly revealed the execution mechanism. The presence of a user-spawned rundll32 loading from a non-standard directory (D:\) is the hallmark of attacker-controlled code execution.
+This was a great example of why establishing a solid baseline matters. rundll32.exe runs all the time in Windows, but once you filter out the noise and look at the parent process and file path, the anomaly jumps right off the screen. A user-level process (explorer.exe) spawning rundll32 to load a DLL from a non-standard path (D:\) is textbook attacker behavior. The mistake they made was simple: they didn't hide where they put the payload.
 
 ---
 
