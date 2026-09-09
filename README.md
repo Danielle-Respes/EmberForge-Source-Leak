@@ -67,10 +67,75 @@ This was a great example of why establishing a solid baseline matters. rundll32.
 
 ---
 
-### Investigation Roadmap
+## Q02 — Where It Actually Came From
 
-- [x] Q01: Initial Access Vector & Execution Identification
-- [ ] Q02: Parent Process Lineage & Shell Analysis
-- [ ] Q03: Payload Artifact Analysis (review.dll hash/metadata)
-- [ ] Q04: Lateral Movement Tracing (Workstation → File Server → DC)
-- [ ] Q05: Persistence & Privilege Escalation Audit
+### Core Findings
+
+* **Downloaded Archive:** `EmberForge_Review.7z`
+* **Archive Contents:** `EmberForge_Review.iso`
+* **ISO Mount Point:** `D:\`
+* **Payload Location:** `D:\review.dll`
+* **Delivery Method:** Self-extracting 7z → ISO → Virtual Drive Mount
+* **ATT&CK Mapping:** [T1566.001 - Phishing: Spearphishing Attachment](https://attack.mitre.org/techniques/T1566/001/)
+
+---
+
+### Technical Analysis & KQL Query
+
+User `lmartin` downloaded `EmberForge_Review.7z` via Microsoft Edge at approximately 21:20 UTC. The archive was extracted to `C:\Users\lmartin.EMBERFORGE\Downloads\EmberForge_Review\` at 21:24:04 UTC using 7-Zip GUI.
+
+The extracted contents included `EmberForge_Review.iso`, which was subsequently mounted as a virtual drive (`D:\`). This mounting occurred between 21:24:04 and 21:27:03 UTC — precisely before the malicious rundll32.exe execution loaded `D:\review.dll`.
+
+Tracking file creation and download events for lmartin:
+
+```kusto
+EmberForge_CL
+| where SystemTime between (datetime(2026-01-30 21:00) .. datetime(2026-01-31 01:00))
+| where Computer == "EC2AMAZ-B9GHHO6"
+| where TargetFilename has_any ("7z", "iso", "EmberForge")
+| sort by SystemTime asc
+| project SystemTime, Computer, User, Image, TargetFilename
+```
+
+This query reveals the complete chain: 7z installer download → archive extraction → ISO file creation → drive mount sequence.
+
+---
+
+### The ISO-in-Archive Delivery Trick
+
+This is a sophisticated evasion technique:
+
+**Why it works:**
+- 7z archives bypass browser Mark-of-the-Web (MOTW) checks on download
+- ISO files, when mounted, do not inherit MOTW metadata
+- DLLs accessed from mounted virtual drives appear to come from a trusted location (a drive letter), not from Downloads
+- Windows Defender and SmartScreen have reduced visibility into mounted ISO contents
+
+**The sequence:**
+1. Download `EmberForge_Review.7z` → File sits in Downloads with MOTW flag
+2. Extract 7z → `EmberForge_Review.iso` created locally (no MOTW check)
+3. Mount ISO as `D:\` → DLL accessed from virtual drive (appears trusted)
+4. Load `D:\review.dll` via rundll32 → Executes with minimal EDR friction
+
+---
+
+### Timeline
+
+| Timestamp | Event | Location |
+|-----------|-------|----------|
+| 21:20 UTC | Download via Edge | C:\Users\lmartin.EMBERFORGE\Downloads\ |
+| 21:23 UTC | 7-Zip installer launched | C:\Users\lmartin.EMBERFORGE\Downloads\ |
+| 21:24:04 UTC | Archive extracted | EmberForge_Review.iso created |
+| 21:27:03 UTC | rundll32 executes D:\review.dll | Malicious payload runs |
+
+---
+
+### Threat Hunter Takeaway
+
+This delivery mechanism highlights why file source and access path matter. A DLL is equally malicious whether it sits on C:\ or D:\, but the path influences detection logic. By nesting the payload inside an ISO inside an archive, the attacker created layers of indirection that slow detection and reduce metadata propagation. The technique is simple but effective — and it's becoming more common in enterprise attacks precisely because it works.
+
+---
+
+
+
+
